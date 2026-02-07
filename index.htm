@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Geolocation-Track (Leaflet)</title>
+
+  <!-- Leaflet -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121a24;
+      --text: #e8eef7;
+      --muted: #a7b3c2;
+      --border: #243244;
+      --btn: #1f2d3d;
+      --btn-hover: #2a3b52;
+      --danger: #7d1f2a;
+      --danger-hover: #992b39;
+      --ok: #204b3a;
+      --ok-hover: #2a654f;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0));
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 650;
+    }
+
+    header p {
+      margin: 6px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+
+    .group {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.02);
+    }
+
+    .btn {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: var(--btn);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 650;
+      font-size: 13px;
+      line-height: 1;
+      user-select: none;
+    }
+    .btn:hover { background: var(--btn-hover); }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .btn.ok { background: var(--ok); }
+    .btn.ok:hover { background: var(--ok-hover); }
+
+    .btn.danger { background: var(--danger); }
+    .btn.danger:hover { background: var(--danger-hover); }
+
+    /* The <geolocation> element has styling guardrails in supporting browsers.
+       Keep changes minimal to avoid being clamped by the UA. */
+    geolocation#geo {
+      border: 1px solid var(--border);
+      background: var(--ok);
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-weight: 650;
+      font-size: 13px;
+      line-height: 1;
+      display: inline-block;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(140px, 1fr));
+      gap: 8px 16px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+    }
+
+    .stat {
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.02);
+    }
+
+    .stat .k { font-size: 11px; color: var(--muted); }
+    .stat .v { margin-top: 4px; font-size: 13px; font-weight: 650; }
+
+    #map {
+      height: calc(100vh - 56px - 64px - 92px);
+      min-height: 340px;
+    }
+
+    .footer {
+      padding: 10px 16px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+      background: var(--panel);
+    }
+
+    code { color: #cfe3ff; }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Live Standortverlauf als Linie (Leaflet)</h1>
+    <p>
+      Hinweis: Geolocation funktioniert nur auf <code>https://</code> oder <code>http://localhost</code>. In Chrome 144+ kann das neue
+      <code>&lt;geolocation&gt;</code>-Element die Permission und Daten liefern.
+    </p>
+  </header>
+
+  <div class="bar">
+    <div class="group" title="Tracking">
+      <!--
+        In unterstützten Browsern rendert das <geolocation>-Element selbst ein Browser-UI.
+        Die Kinder werden dann nicht gerendert (Fallback nur für nicht unterstützte Browser).
+      -->
+      <geolocation id="geo" accuracymode="precise" watch>
+        <button id="fallback_start" class="btn ok" type="button">Start</button>
+      </geolocation>
+
+      <button id="pause" class="btn" type="button" disabled>Pause</button>
+      <button id="stop" class="btn danger" type="button" disabled>Stopp</button>
+    </div>
+
+    <div class="group" title="Optionen">
+      <button id="toggle_follow" class="btn" type="button">Follow: an</button>
+      <button id="clear" class="btn" type="button" disabled>Linie löschen</button>
+    </div>
+
+    <div class="group" title="Status">
+      <span id="status" style="color: var(--muted); font-size: 12px;">Bereit</span>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Punkte</div><div class="v" id="s_points">0</div></div>
+    <div class="stat"><div class="k">Distanz (ca.)</div><div class="v" id="s_dist">0 m</div></div>
+    <div class="stat"><div class="k">Letzter Fix</div><div class="v" id="s_time">–</div></div>
+    <div class="stat"><div class="k">Genauigkeit</div><div class="v" id="s_acc">–</div></div>
+  </div>
+
+  <div id="map"></div>
+
+  <div class="footer">
+    Tipp: Teste am Smartphone draußen für bessere Ergebnisse. Wenn du in einem Browser ohne <code>&lt;geolocation&gt;</code> bist,
+    nutzt das Demo automatisch <code>navigator.geolocation.watchPosition()</code> als Fallback.
+  </div>
+
+  <script type="module">
+    // --- Optional polyfill (does nothing if native <geolocation> exists) ---
+    // The official blog mentions a polyfill that swaps <geolocation> to <geo-location>.
+    // We identify the element by id, so this keeps working either way.
+    try {
+      if (!('HTMLGeolocationElement' in window)) {
+        await import('https://unpkg.com/geolocation-element-polyfill/index.js');
+      }
+    } catch (err) {
+      // Polyfill failed (offline / blocked). We'll still run with the JS fallback.
+      console.warn('Geolocation element polyfill failed to load:', err);
+    }
+
+    // --- Leaflet map setup ---
+    const map = L.map('map', {
+      zoomControl: true,
+      attributionControl: true,
+    }).setView([48.137154, 11.576124], 12); // default: München
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(map);
+
+    const polyline = L.polyline([], { weight: 4 }).addTo(map);
+    let marker = null;
+
+    // --- UI refs ---
+    const geo_el = document.getElementById('geo');
+    const fallback_start_btn = document.getElementById('fallback_start');
+    const pause_btn = document.getElementById('pause');
+    const stop_btn = document.getElementById('stop');
+    const toggle_follow_btn = document.getElementById('toggle_follow');
+    const clear_btn = document.getElementById('clear');
+    const status_el = document.getElementById('status');
+
+    const s_points = document.getElementById('s_points');
+    const s_dist = document.getElementById('s_dist');
+    const s_time = document.getElementById('s_time');
+    const s_acc = document.getElementById('s_acc');
+
+    // --- State ---
+    let is_tracking = false;
+    let is_paused = false;
+    let follow = true;
+
+    /** @type {Array<{lat:number,lng:number,t:number,acc?:number}>} */
+    let points = [];
+    let approx_distance_m = 0;
+
+    // JS fallback watcher id
+    let watch_id = null;
+
+    // --- Helpers ---
+    function set_status(msg) {
+      status_el.textContent = msg;
+    }
+
+    function fmt_time(ts) {
+      const d = new Date(ts);
+      const pad2 = (n) => String(n).padStart(2, '0');
+      return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+    }
+
+    function haversine_m(a, b) {
+      const R = 6371000;
+      const to_rad = (deg) => (deg * Math.PI) / 180;
+      const d_lat = to_rad(b.lat - a.lat);
+      const d_lng = to_rad(b.lng - a.lng);
+      const lat1 = to_rad(a.lat);
+      const lat2 = to_rad(b.lat);
+
+      const h =
+        Math.sin(d_lat / 2) ** 2 +
+        Math.cos(lat1) * Math.cos(lat2) * Math.sin(d_lng / 2) ** 2;
+
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+    }
+
+    function update_stats() {
+      s_points.textContent = String(points.length);
+      s_dist.textContent = `${Math.round(approx_distance_m)} m`;
+
+      const last = points.at(-1);
+      if (!last) {
+        s_time.textContent = '–';
+        s_acc.textContent = '–';
+        return;
+      }
+
+      s_time.textContent = fmt_time(last.t);
+      s_acc.textContent = typeof last.acc === 'number' ? `${Math.round(last.acc)} m` : '–';
+    }
+
+    function reset_track() {
+      points = [];
+      approx_distance_m = 0;
+      polyline.setLatLngs([]);
+      if (marker) {
+        map.removeLayer(marker);
+        marker = null;
+      }
+      update_stats();
+    }
+
+    function add_point(lat, lng, acc) {
+      const now = Date.now();
+      const next = { lat, lng, t: now, acc };
+
+      const last = points.at(-1);
+      if (last) {
+        const d = haversine_m(last, next);
+        // Filter tiny noise steps; still accept if time gap is large.
+        const time_gap = now - last.t;
+        if (d < 2 && time_gap < 5000) return;
+        approx_distance_m += d;
+      }
+
+      points.push(next);
+      polyline.addLatLng([lat, lng]);
+
+      if (!marker) {
+        marker = L.marker([lat, lng]).addTo(map);
+        map.setView([lat, lng], 18);
+      } else {
+        marker.setLatLng([lat, lng]);
+        if (follow) map.panTo([lat, lng], { animate: true });
+      }
+
+      update_stats();
+      clear_btn.disabled = points.length === 0;
+    }
+
+    function set_controls_state() {
+      pause_btn.disabled = !is_tracking;
+      stop_btn.disabled = !is_tracking;
+      clear_btn.disabled = points.length === 0;
+
+      pause_btn.textContent = is_paused ? 'Weiter' : 'Pause';
+    }
+
+    // --- Geolocation element event handler ---
+    function handle_geo_element_location(ev) {
+      // <geolocation> exposes position/error as properties on the element.
+      const el = ev.target;
+
+      if (!is_tracking) {
+        // In case the user clicks the element before we are in tracking mode.
+        is_tracking = true;
+        is_paused = false;
+        set_controls_state();
+      }
+
+      if (is_paused) return;
+
+      if (el?.position?.coords) {
+        const { latitude, longitude, accuracy } = el.position.coords;
+        add_point(latitude, longitude, accuracy);
+        set_status(`Tracking aktiv (${points.length} Punkte)`);
+      } else if (el?.error) {
+        set_status(`Fehler: ${el.error.message || 'Unbekannt'}`);
+      }
+    }
+
+    // --- JS fallback (navigator.geolocation) ---
+    function start_js_fallback_watch() {
+      if (!('geolocation' in navigator)) {
+        set_status('Geolocation nicht verfügbar (navigator.geolocation fehlt).');
+        return;
+      }
+
+      // Clear old watcher if any
+      if (watch_id !== null) {
+        navigator.geolocation.clearWatch(watch_id);
+        watch_id = null;
+      }
+
+      watch_id = navigator.geolocation.watchPosition(
+        (pos) => {
+          if (!is_tracking || is_paused) return;
+          add_point(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+          set_status(`Tracking aktiv (${points.length} Punkte)`);
+        },
+        (err) => {
+          set_status(`Fehler: ${err.message || 'Unbekannt'}`);
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+      );
+    }
+
+    function stop_js_fallback_watch() {
+      if (watch_id !== null && 'geolocation' in navigator) {
+        navigator.geolocation.clearWatch(watch_id);
+        watch_id = null;
+      }
+    }
+
+    // --- Start/Pause/Stop logic ---
+    function start_tracking() {
+      reset_track();
+      is_tracking = true;
+      is_paused = false;
+      set_controls_state();
+
+      // For the <geolocation> element:
+      // - If it exists natively or via polyfill, it will emit `location` events.
+      // - In some UAs, the user must click the element itself to trigger the permission flow.
+      // We still support a JS fallback when the element path does not produce updates.
+      set_status('Starte Tracking… (ggf. Permission bestätigen)');
+
+      // If the <geolocation> element isn't supported and no polyfill is active,
+      // its children are rendered => the fallback button triggers JS watchPosition.
+      if (!('HTMLGeolocationElement' in window)) {
+        // Start JS watcher as primary path in non-supporting browsers.
+        start_js_fallback_watch();
+      }
+    }
+
+    function pause_tracking() {
+      if (!is_tracking) return;
+      is_paused = !is_paused;
+      set_status(is_paused ? 'Pausiert' : 'Tracking aktiv');
+      set_controls_state();
+    }
+
+    function stop_tracking() {
+      if (!is_tracking) return;
+
+      is_tracking = false;
+      is_paused = false;
+
+      // Stop JS fallback watcher
+      stop_js_fallback_watch();
+
+      // For <geolocation>, removing watch stops continuous updates.
+      try { geo_el.removeAttribute('watch'); } catch { /* ignore */ }
+
+      set_status('Gestoppt');
+      set_controls_state();
+    }
+
+    // --- Wire up events ---
+    // Listen to the new element's location events.
+    geo_el.addEventListener('location', handle_geo_element_location);
+
+    // In supporting browsers, clicking the <geolocation> element is the “Start/Permission” action.
+    // We use that click to (re)start a clean track.
+    geo_el.addEventListener('click', () => {
+      // Re-enable watch in case stop removed it
+      geo_el.setAttribute('watch', '');
+      start_tracking();
+    });
+
+    // Fallback Start button is only visible when <geolocation> is not supported.
+    if (fallback_start_btn) {
+      fallback_start_btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        start_tracking();
+      });
+    }
+
+    pause_btn.addEventListener('click', pause_tracking);
+
+    stop_btn.addEventListener('click', () => {
+      stop_tracking();
+      // Keep existing track visible after stop; user can clear manually.
+    });
+
+    clear_btn.addEventListener('click', () => {
+      reset_track();
+      set_status(is_tracking ? 'Tracking aktiv (Linie gelöscht)' : 'Linie gelöscht');
+      set_controls_state();
+    });
+
+    toggle_follow_btn.addEventListener('click', () => {
+      follow = !follow;
+      toggle_follow_btn.textContent = `Follow: ${follow ? 'an' : 'aus'}`;
+      set_status(follow ? 'Follow aktiviert' : 'Follow deaktiviert');
+    });
+
+    // Initial UI state
+    set_controls_state();
+
+    // Helpful: if user starts tracking in a supporting browser but never gets events,
+    // show a hint after a short delay.
+    setInterval(() => {
+      if (!is_tracking) return;
+      const last = points.at(-1);
+      const age = last ? (Date.now() - last.t) : Infinity;
+      if (age > 20000) {
+        // Only hint, no spam
+        if (status_el.textContent.startsWith('Starte Tracking')) {
+          set_status('Noch keine Updates… Tippe auf den Geolocation-Button und bestätige die Permission.');
+        }
+      }
+    }, 5000);
+  </script>
+</body>
+</html>
