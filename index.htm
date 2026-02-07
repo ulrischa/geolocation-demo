@@ -1,22 +1,13 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Geolocation-Track (Leaflet)</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Geolocation Track (Leaflet)</title>
 
-  <!-- Leaflet -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
-  />
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
-  ></script>
+  <!-- Leaflet (no SRI; reduces breakage in sandbox/CSP environments) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
     :root {
@@ -31,11 +22,13 @@
       --danger-hover: #992b39;
       --ok: #204b3a;
       --ok-hover: #2a654f;
-      --warn: #a86a10;
-      --warn-bg: rgba(168, 106, 16, 0.12);
+      --warn-bg: rgba(168,106,16,0.12);
+      --err-bg: rgba(181,58,74,0.12);
+      --ok-bg: rgba(42,101,79,0.12);
     }
 
     * { box-sizing: border-box; }
+    html, body { height: 100%; }
     body {
       margin: 0;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
@@ -97,6 +90,7 @@
       user-select: none;
       white-space: nowrap;
     }
+
     .btn:hover { background: var(--btn-hover); }
     .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
@@ -113,18 +107,29 @@
       max-width: 520px;
     }
 
-    .warn {
-      border: 1px solid rgba(168, 106, 16, 0.45);
+    .panel {
+      border: 1px solid rgba(168,106,16,0.45);
       background: var(--warn-bg);
       color: var(--text);
       padding: 10px 12px;
       border-radius: 12px;
       font-size: 12px;
       line-height: 1.3;
-      max-width: 880px;
+      max-width: 980px;
+      white-space: pre-wrap;
     }
 
-    /* Keep styling on <geolocation> minimal to avoid style blockers. */
+    .panel.error {
+      border-color: rgba(181,58,74,0.55);
+      background: var(--err-bg);
+    }
+
+    .panel.ok {
+      border-color: rgba(42,101,79,0.55);
+      background: var(--ok-bg);
+    }
+
+    /* Keep styling on <geolocation> minimal. */
     geolocation#geo {
       font-size: 13px;
       min-height: 40px;
@@ -133,16 +138,16 @@
     }
 
     .pulse {
-      outline: 2px solid rgba(168, 106, 16, 0.9);
+      outline: 2px solid rgba(168,106,16,0.9);
       outline-offset: 2px;
       animation: pulse 1.2s ease-in-out infinite;
       border-radius: 12px;
     }
 
     @keyframes pulse {
-      0% { outline-color: rgba(168, 106, 16, 0.95); }
-      50% { outline-color: rgba(168, 106, 16, 0.25); }
-      100% { outline-color: rgba(168, 106, 16, 0.95); }
+      0% { outline-color: rgba(168,106,16,0.95); }
+      50% { outline-color: rgba(168,106,16,0.25); }
+      100% { outline-color: rgba(168,106,16,0.95); }
     }
 
     .stats {
@@ -174,8 +179,9 @@
     }
 
     #map {
-      height: calc(100vh - 56px - 64px - 170px);
+      height: 60vh;
       min-height: 340px;
+      border-top: 1px solid var(--border);
     }
 
     .footer {
@@ -189,13 +195,12 @@
     code { color: #cfe3ff; }
   </style>
 </head>
-
 <body>
   <header>
     <h1>Live Standortverlauf als Linie (Leaflet)</h1>
     <p>
-      Dieses Demo nutzt das neue <code>&lt;geolocation&gt;</code>-Element (Chrome 144+) und zeichnet den Verlauf live als Linie.
-      Zusätzlich gibt es einen JS-Fallback über die klassische Geolocation API.
+      Zeichnet deinen Standortverlauf live als Linie. Buttons: Start, Pause, Stopp.
+      Start (JS) nutzt navigator.geolocation als Fallback.
     </p>
   </header>
 
@@ -203,179 +208,218 @@
     <div class="group" title="Tracking">
       <span class="hint">Start:</span>
 
-      <!--
-        In unterstützten Browsern rendert <geolocation> selbst ein Browser-UI.
-        Die Kinder werden dann nicht gerendert (Fallback nur für nicht unterstützte Browser).
-      -->
+      <!-- In Chrome 144+ should render its own control. -->
       <geolocation id="geo" accuracymode="precise" watch autolocate>
+        <!-- Fallback content (visible when element not supported) -->
         <button id="fallback_start" class="btn ok" type="button">Start (JS)</button>
       </geolocation>
 
-      <!-- Always-visible JS start button for debugging (works unless blocked by secure context / iframe policy). -->
       <button id="start_js" class="btn ok" type="button">Start (JS)</button>
-
       <button id="pause" class="btn" type="button" disabled>Pause</button>
       <button id="stop" class="btn danger" type="button" disabled>Stopp</button>
     </div>
 
     <div class="group" title="Optionen">
       <button id="toggle_follow" class="btn" type="button">Follow: an</button>
-      <button id="clear" class="btn" type="button" disabled>Linie löschen</button>
+      <button id="clear" class="btn" type="button" disabled>Linie loeschen</button>
     </div>
 
     <div class="group" title="Status">
       <span id="status" style="color: var(--muted); font-size: 12px;">Bereit</span>
     </div>
 
-    <div class="warn" id="warn_box" hidden></div>
+    <div class="panel" id="warn_box" hidden></div>
+    <div class="panel error" id="error_box" hidden></div>
+    <div class="panel ok" id="test_box" hidden></div>
   </div>
 
   <div class="stats">
     <div class="stat"><div class="k">Punkte</div><div class="v" id="s_points">0</div></div>
     <div class="stat"><div class="k">Distanz (ca.)</div><div class="v" id="s_dist">0 m</div></div>
-    <div class="stat"><div class="k">Letzter Fix</div><div class="v" id="s_time">–</div></div>
-    <div class="stat"><div class="k">Genauigkeit</div><div class="v" id="s_acc">–</div></div>
+    <div class="stat"><div class="k">Letzter Fix</div><div class="v" id="s_time">-</div></div>
+    <div class="stat"><div class="k">Genauigkeit</div><div class="v" id="s_acc">-</div></div>
 
     <div class="stat diag">
       <div class="k">Diagnostik</div>
-      <div class="v" id="diag">–</div>
+      <div class="v" id="diag">(initializing...)</div>
     </div>
   </div>
 
   <div id="map"></div>
 
   <div class="footer">
-    Hinweis: Geolocation benötigt einen <code>secure context</code> (HTTPS oder <code>http://localhost</code>). In iFrames kann Geolocation per Permissions Policy blockiert sein.
+    Hinweis: Geolocation benoetigt HTTPS oder http://localhost. In iFrames kann Geolocation blockiert sein.
   </div>
 
-  <script type="module">
-    // --- Optional polyfill (does nothing if native <geolocation> exists) ---
-    try {
-      if (!('HTMLGeolocationElement' in window)) {
-        await import('https://unpkg.com/geolocation-element-polyfill/index.js');
-      }
-    } catch (err) {
-      console.warn('Geolocation element polyfill failed to load:', err);
+  <script>
+  (function () {
+    'use strict';
+
+    // If you still get "Invalid or unexpected token", it is almost certainly caused by
+    // a hidden non-printable character injected by the environment/editor. This file uses ASCII only.
+
+    var error_box = document.getElementById('error_box');
+    var warn_box = document.getElementById('warn_box');
+    var test_box = document.getElementById('test_box');
+
+    function show_error(msg) {
+      if (!error_box) return;
+      error_box.hidden = false;
+      error_box.textContent = String(msg);
     }
 
-    // --- Leaflet map setup ---
-    const map = L.map('map', {
-      zoomControl: true,
-      attributionControl: true,
-    }).setView([48.137154, 11.576124], 12); // default: München
+    function hide_error() {
+      if (!error_box) return;
+      error_box.hidden = true;
+      error_box.textContent = '';
+    }
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors',
-    }).addTo(map);
+    window.addEventListener('error', function (e) {
+      show_error('JS error: ' + e.message + '\n' + (e.filename || '') + ':' + (e.lineno || ''));
+    });
 
-    const polyline = L.polyline([], { weight: 4 }).addTo(map);
-    let marker = null;
+    window.addEventListener('unhandledrejection', function (e) {
+      var r = (e && e.reason) ? (e.reason.message || String(e.reason)) : 'unknown';
+      show_error('Promise rejection: ' + r);
+    });
 
-    // --- UI refs ---
-    const geo_el = document.getElementById('geo');
-    const fallback_start_btn = document.getElementById('fallback_start');
-    const start_js_btn = document.getElementById('start_js');
-    const pause_btn = document.getElementById('pause');
-    const stop_btn = document.getElementById('stop');
-    const toggle_follow_btn = document.getElementById('toggle_follow');
-    const clear_btn = document.getElementById('clear');
-    const status_el = document.getElementById('status');
-    const warn_box = document.getElementById('warn_box');
+    var geo_el = document.getElementById('geo');
+    var fallback_start_btn = document.getElementById('fallback_start');
+    var start_js_btn = document.getElementById('start_js');
+    var pause_btn = document.getElementById('pause');
+    var stop_btn = document.getElementById('stop');
+    var toggle_follow_btn = document.getElementById('toggle_follow');
+    var clear_btn = document.getElementById('clear');
+    var status_el = document.getElementById('status');
 
-    const s_points = document.getElementById('s_points');
-    const s_dist = document.getElementById('s_dist');
-    const s_time = document.getElementById('s_time');
-    const s_acc = document.getElementById('s_acc');
-    const diag_el = document.getElementById('diag');
+    var s_points = document.getElementById('s_points');
+    var s_dist = document.getElementById('s_dist');
+    var s_time = document.getElementById('s_time');
+    var s_acc = document.getElementById('s_acc');
+    var diag_el = document.getElementById('diag');
 
-    // --- State ---
-    let is_tracking = false;
-    let is_paused = false;
-    let follow = true;
-
-    /** @type {Array<{lat:number,lng:number,t:number,acc?:number}>} */
-    let points = [];
-    let approx_distance_m = 0;
-
-    // JS fallback watcher id
-    let watch_id = null;
-
-    // Permissions API state (if available)
-    let permissions_api_state = 'n/a';
-
-    // --- Helpers ---
     function set_status(msg) {
-      status_el.textContent = msg;
+      if (status_el) status_el.textContent = msg;
     }
 
     function show_warn(lines) {
+      if (!warn_box) return;
       if (!lines || lines.length === 0) {
         warn_box.hidden = true;
         warn_box.textContent = '';
         return;
       }
       warn_box.hidden = false;
-      warn_box.textContent = lines.join('
-');
+      warn_box.textContent = lines.join('\n');
+    }
+
+    function show_tests(lines) {
+      if (!test_box) return;
+      if (!lines || lines.length === 0) {
+        test_box.hidden = true;
+        test_box.textContent = '';
+        return;
+      }
+      test_box.hidden = false;
+      test_box.textContent = lines.join('\n');
+    }
+
+    var is_tracking = false;
+    var is_paused = false;
+    var follow = true;
+
+    var points = [];
+    var approx_distance_m = 0;
+
+    var watch_id = null;
+    var permissions_api_state = 'n/a';
+
+    function pad2(n) {
+      var s = String(n);
+      return (s.length < 2) ? ('0' + s) : s;
     }
 
     function fmt_time(ts) {
-      const d = new Date(ts);
-      const pad2 = (n) => String(n).padStart(2, '0');
-      return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+      var d = new Date(ts);
+      return pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
     }
 
     function haversine_m(a, b) {
-      const R = 6371000;
-      const to_rad = (deg) => (deg * Math.PI) / 180;
-      const d_lat = to_rad(b.lat - a.lat);
-      const d_lng = to_rad(b.lng - a.lng);
-      const lat1 = to_rad(a.lat);
-      const lat2 = to_rad(b.lat);
+      var R = 6371000;
+      function to_rad(deg) { return (deg * Math.PI) / 180; }
+      var d_lat = to_rad(b.lat - a.lat);
+      var d_lng = to_rad(b.lng - a.lng);
+      var lat1 = to_rad(a.lat);
+      var lat2 = to_rad(b.lat);
 
-      const h =
-        Math.sin(d_lat / 2) ** 2 +
-        Math.cos(lat1) * Math.cos(lat2) * Math.sin(d_lng / 2) ** 2;
+      var h =
+        Math.sin(d_lat / 2) * Math.sin(d_lat / 2) +
+        Math.cos(lat1) * Math.cos(lat2) * Math.sin(d_lng / 2) * Math.sin(d_lng / 2);
 
       return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
     }
 
-    function update_stats() {
-      s_points.textContent = String(points.length);
-      s_dist.textContent = `${Math.round(approx_distance_m)} m`;
+    function last_point() {
+      return points.length ? points[points.length - 1] : null;
+    }
 
-      const last = points.at(-1);
+    function update_stats() {
+      if (s_points) s_points.textContent = String(points.length);
+      if (s_dist) s_dist.textContent = String(Math.round(approx_distance_m)) + ' m';
+
+      var last = last_point();
       if (!last) {
-        s_time.textContent = '–';
-        s_acc.textContent = '–';
+        if (s_time) s_time.textContent = '-';
+        if (s_acc) s_acc.textContent = '-';
         return;
       }
 
-      s_time.textContent = fmt_time(last.t);
-      s_acc.textContent = typeof last.acc === 'number' ? `${Math.round(last.acc)} m` : '–';
+      if (s_time) s_time.textContent = fmt_time(last.t);
+      if (s_acc) s_acc.textContent = (typeof last.acc === 'number') ? (String(Math.round(last.acc)) + ' m') : '-';
+    }
+
+    // Leaflet state
+    var map = null;
+    var polyline = null;
+    var marker = null;
+
+    function init_map() {
+      if (!(window.L && typeof window.L.map === 'function')) {
+        show_error('Leaflet konnte nicht geladen werden. (CSP/Netzwerk blockiert?)');
+        return;
+      }
+
+      map = window.L.map('map', { zoomControl: true, attributionControl: true }).setView([48.137154, 11.576124], 12);
+
+      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      polyline = window.L.polyline([], { weight: 4 }).addTo(map);
+
+      setTimeout(function () { if (map && map.invalidateSize) map.invalidateSize(); }, 0);
+      setTimeout(function () { if (map && map.invalidateSize) map.invalidateSize(); }, 250);
     }
 
     function reset_track() {
       points = [];
       approx_distance_m = 0;
-      polyline.setLatLngs([]);
-      if (marker) {
-        map.removeLayer(marker);
-        marker = null;
-      }
+      if (polyline) polyline.setLatLngs([]);
+      if (marker) { marker.remove(); marker = null; }
       update_stats();
     }
 
     function add_point(lat, lng, acc) {
-      const now = Date.now();
-      const next = { lat, lng, t: now, acc };
+      if (!map || !polyline) return;
 
-      const last = points.at(-1);
+      var now = Date.now();
+      var next = { lat: lat, lng: lng, t: now, acc: acc };
+
+      var last = last_point();
       if (last) {
-        const d = haversine_m(last, next);
-        // Filter tiny noise steps; still accept if time gap is large.
-        const time_gap = now - last.t;
+        var d = haversine_m(last, next);
+        var time_gap = now - last.t;
         if (d < 2 && time_gap < 5000) return;
         approx_distance_m += d;
       }
@@ -384,7 +428,7 @@
       polyline.addLatLng([lat, lng]);
 
       if (!marker) {
-        marker = L.marker([lat, lng]).addTo(map);
+        marker = window.L.marker([lat, lng]).addTo(map);
         map.setView([lat, lng], 18);
       } else {
         marker.setLatLng([lat, lng]);
@@ -392,109 +436,73 @@
       }
 
       update_stats();
-      clear_btn.disabled = points.length === 0;
+      if (clear_btn) clear_btn.disabled = (points.length === 0);
     }
 
     function set_controls_state() {
-      pause_btn.disabled = !is_tracking;
-      stop_btn.disabled = !is_tracking;
-      clear_btn.disabled = points.length === 0;
-
-      pause_btn.textContent = is_paused ? 'Weiter' : 'Pause';
+      if (pause_btn) pause_btn.disabled = !is_tracking;
+      if (stop_btn) stop_btn.disabled = !is_tracking;
+      if (clear_btn) clear_btn.disabled = (points.length === 0);
+      if (pause_btn) pause_btn.textContent = is_paused ? 'Weiter' : 'Pause';
     }
 
-    async function refresh_permissions_api_state() {
+    function refresh_permissions_api_state() {
       permissions_api_state = 'n/a';
-      if (!navigator.permissions?.query) return;
-      try {
-        // @ts-ignore
-        const res = await navigator.permissions.query({ name: 'geolocation' });
-        permissions_api_state = res.state;
-        res.onchange = () => { render_diag(); };
-      } catch {
-        permissions_api_state = 'error';
-      }
+      if (!(navigator.permissions && navigator.permissions.query)) return Promise.resolve();
+
+      return navigator.permissions.query({ name: 'geolocation' }).then(
+        function (res) {
+          permissions_api_state = res.state;
+          res.onchange = function () { render_diag(); };
+        },
+        function () { permissions_api_state = 'error'; }
+      );
     }
 
     function render_diag() {
-      const supports_geo_el = ('HTMLGeolocationElement' in window) ? 'yes' : 'no';
-      const proto = location.protocol;
-      const secure = window.isSecureContext ? 'yes' : 'no';
-      const iframe = (window.top !== window.self) ? 'yes' : 'no';
-      const nav_geo = ('geolocation' in navigator) ? 'yes' : 'no';
+      if (!diag_el) return;
 
-      const lines = [];
-      lines.push(`protocol: ${proto}`);
-      lines.push(`secure_context: ${secure}`);
-      lines.push(`in_iframe: ${iframe}`);
-      lines.push(`navigator.geolocation: ${nav_geo}`);
-      lines.push(`permissions_api.geolocation: ${permissions_api_state}`);
-      lines.push(`html_geolocation_element: ${supports_geo_el}`);
+      var supports_geo_el = ('HTMLGeolocationElement' in window) ? 'yes' : 'no';
+      var proto = location.protocol;
+      var secure = window.isSecureContext ? 'yes' : 'no';
+      var iframe = (window.top !== window.self) ? 'yes' : 'no';
+      var nav_geo = ('geolocation' in navigator) ? 'yes' : 'no';
+      var leaflet = (window.L && typeof window.L.map === 'function') ? 'yes' : 'no';
 
-      if ('HTMLGeolocationElement' in window) {
-        const is_valid = (typeof geo_el.isValid === 'boolean') ? String(geo_el.isValid) : 'n/a';
-        const invalid_reason = (typeof geo_el.invalidReason === 'string') ? (geo_el.invalidReason || '(none)') : 'n/a';
-        const initial = (typeof geo_el.initialPermissionStatus === 'string') ? geo_el.initialPermissionStatus : 'n/a';
-        const current = (typeof geo_el.permissionStatus === 'string') ? geo_el.permissionStatus : 'n/a';
+      var lines = [];
+      lines.push('protocol: ' + proto);
+      lines.push('secure_context: ' + secure);
+      lines.push('in_iframe: ' + iframe);
+      lines.push('navigator.geolocation: ' + nav_geo);
+      lines.push('permissions_api.geolocation: ' + permissions_api_state);
+      lines.push('html_geolocation_element: ' + supports_geo_el);
+      lines.push('leaflet_loaded: ' + leaflet);
 
-        lines.push(`geo.isValid: ${is_valid}`);
-        lines.push(`geo.invalidReason: ${invalid_reason}`);
-        lines.push(`geo.initialPermissionStatus: ${initial}`);
-        lines.push(`geo.permissionStatus: ${current}`);
+      if ('HTMLGeolocationElement' in window && geo_el) {
+        var is_valid = (typeof geo_el.isValid === 'boolean') ? String(geo_el.isValid) : 'n/a';
+        var invalid_reason = (typeof geo_el.invalidReason === 'string') ? (geo_el.invalidReason || '(none)') : 'n/a';
+        var initial = (typeof geo_el.initialPermissionStatus === 'string') ? geo_el.initialPermissionStatus : 'n/a';
+        var current = (typeof geo_el.permissionStatus === 'string') ? geo_el.permissionStatus : 'n/a';
+
+        lines.push('geo.isValid: ' + is_valid);
+        lines.push('geo.invalidReason: ' + invalid_reason);
+        lines.push('geo.initialPermissionStatus: ' + initial);
+        lines.push('geo.permissionStatus: ' + current);
       }
 
-      diag_el.textContent = lines.join('
-');
+      diag_el.textContent = lines.join('\n');
 
-      const warns = [];
-      if (secure === 'no') {
-        warns.push('Kein secure context: nutze https oder http://localhost.');
-      }
-      if (proto === 'file:') {
-        warns.push('file:// erkannt: starte über localhost oder https, sonst kommt oft keine Permission.');
-      }
-      if (iframe === 'yes') {
-        warns.push('In einem iFrame: Geolocation kann per Permissions Policy blockiert sein. In diesem Fall erscheint keine Permission-Abfrage.');
-      }
+      var warns = [];
+      if (secure === 'no') warns.push('Kein secure context: nutze https oder http://localhost.');
+      if (proto === 'file:') warns.push('file:// erkannt: starte ueber localhost oder https.');
+      if (iframe === 'yes') warns.push('In einem iFrame: Geolocation kann blockiert sein.');
+      if (leaflet === 'no') warns.push('Leaflet ist nicht geladen (CSP/Netzwerk blockiert).');
       show_warn(warns);
     }
 
-    // --- <geolocation> event handlers ---
-    function handle_geo_element_location() {
-      if (!is_tracking || is_paused) return;
-
-      if (geo_el?.position?.coords) {
-        const { latitude, longitude, accuracy } = geo_el.position.coords;
-        add_point(latitude, longitude, accuracy);
-        set_status(`Tracking aktiv (${points.length} Punkte)`);
-      } else if (geo_el?.error) {
-        set_status(`Fehler: ${geo_el.error.message || 'Unbekannt'}`);
-      }
-
-      render_diag();
-    }
-
-    function handle_prompt_action() {
-      // Fires when user chose allow/deny in the dialog.
-      render_diag();
-      if (typeof geo_el.permissionStatus === 'string') {
-        if (geo_el.permissionStatus === 'denied') {
-          set_status('Permission ist abgelehnt (Site-Einstellung prüfen).');
-        } else if (geo_el.permissionStatus === 'granted') {
-          set_status('Permission erteilt.');
-        }
-      }
-    }
-
-    function handle_prompt_dismiss() {
-      render_diag();
-      set_status('Permission-Dialog geschlossen. Tippe erneut auf das Element.');
-    }
-
-    // --- JS Geolocation API fallback ---
     function start_js_watch() {
       if (!('geolocation' in navigator)) {
-        set_status('Geolocation nicht verfügbar (navigator.geolocation fehlt).');
+        set_status('Geolocation nicht verfuegbar (navigator.geolocation fehlt).');
         return;
       }
 
@@ -504,13 +512,13 @@
       }
 
       watch_id = navigator.geolocation.watchPosition(
-        (pos) => {
+        function (pos) {
           if (!is_tracking || is_paused) return;
           add_point(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
-          set_status(`Tracking aktiv (${points.length} Punkte)`);
+          set_status('Tracking aktiv (' + points.length + ' Punkte)');
         },
-        (err) => {
-          set_status(`Fehler: ${err.message || 'Unbekannt'}`);
+        function (err) {
+          set_status('Fehler: ' + (err.message || 'Unbekannt'));
           render_diag();
         },
         { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
@@ -518,34 +526,42 @@
     }
 
     function stop_js_watch() {
-      if (watch_id !== null && 'geolocation' in navigator) {
+      if (watch_id !== null && ('geolocation' in navigator)) {
         navigator.geolocation.clearWatch(watch_id);
         watch_id = null;
       }
     }
 
-    // --- Start/Pause/Stop logic ---
-    function start_tracking({ prefer_js } = { prefer_js: false }) {
+    function handle_geo_element_location() {
+      if (!is_tracking || is_paused) return;
+      if (geo_el && geo_el.position && geo_el.position.coords) {
+        var c = geo_el.position.coords;
+        add_point(c.latitude, c.longitude, c.accuracy);
+        set_status('Tracking aktiv (' + points.length + ' Punkte)');
+      }
+      render_diag();
+    }
+
+    function start_tracking(prefer_js) {
       reset_track();
       is_tracking = true;
       is_paused = false;
       set_controls_state();
 
       if (prefer_js) {
-        set_status('Starte über JS-Geolocation… (Permission bestätigen)');
+        set_status('Starte ueber JS-Geolocation (Permission bestaetigen)');
         start_js_watch();
         return;
       }
 
-      if ('HTMLGeolocationElement' in window) {
-        // Permission dialog is triggered by user action on the browser-rendered control.
+      if ('HTMLGeolocationElement' in window && geo_el) {
         geo_el.classList.add('pulse');
-        set_status('Zum Start auf das <geolocation>-Element klicken (Browser-UI). Alternativ: Start (JS).');
-        geo_el.setAttribute('watch', '');
-        geo_el.setAttribute('autolocate', '');
-        window.setTimeout(() => geo_el.classList.remove('pulse'), 3500);
+        set_status('Zum Start auf <geolocation> klicken (Browser-UI). Alternativ: Start (JS).');
+        try { geo_el.setAttribute('watch', ''); } catch (e) {}
+        try { geo_el.setAttribute('autolocate', ''); } catch (e2) {}
+        setTimeout(function () { geo_el.classList.remove('pulse'); }, 3500);
       } else {
-        set_status('Starte über JS-Geolocation… (Permission bestätigen)');
+        set_status('Starte ueber JS-Geolocation (Permission bestaetigen)');
         start_js_watch();
       }
     }
@@ -556,14 +572,12 @@
 
       if (is_paused) {
         set_status('Pausiert');
-        // Reduce background work
         stop_js_watch();
-        try { geo_el.removeAttribute('watch'); } catch { /* ignore */ }
+        try { if (geo_el) geo_el.removeAttribute('watch'); } catch (e) {}
       } else {
         set_status('Tracking aktiv');
-        // Resume with the most reliable path: JS watcher (does not prevent <geolocation> updates)
         start_js_watch();
-        try { geo_el.setAttribute('watch', ''); } catch { /* ignore */ }
+        try { if (geo_el) geo_el.setAttribute('watch', ''); } catch (e2) {}
       }
 
       set_controls_state();
@@ -572,65 +586,106 @@
 
     function stop_tracking() {
       if (!is_tracking) return;
-
       is_tracking = false;
       is_paused = false;
 
       stop_js_watch();
-      try { geo_el.removeAttribute('watch'); } catch { /* ignore */ }
+      try { if (geo_el) geo_el.removeAttribute('watch'); } catch (e) {}
 
       set_status('Gestoppt');
       set_controls_state();
       render_diag();
     }
 
-    // --- Wire up events ---
-    geo_el.addEventListener('location', handle_geo_element_location);
-    geo_el.addEventListener('promptaction', handle_prompt_action);
-    geo_el.addEventListener('promptdismiss', handle_prompt_dismiss);
-    geo_el.addEventListener('validationstatuschange', render_diag);
+    // Tests: keep existing test cases, add more.
+    function run_tests() {
+      var results = [];
 
-    // In supporting browsers, user must click the <geolocation> control.
-    geo_el.addEventListener('click', () => {
-      if (!is_tracking) start_tracking();
-    });
+      // 1) newline join works
+      var joined = ['a', 'b'].join('\n');
+      if (joined === 'a\nb') results.push('PASS: newline join works');
+      else results.push('FAIL: newline join works');
 
-    // Fallback button inside <geolocation> is only visible when <geolocation> is not supported.
+      // 2) Leaflet loaded
+      var leaflet_ok = (window.L && typeof window.L.map === 'function');
+      results.push((leaflet_ok ? 'PASS' : 'FAIL') + ': Leaflet loaded');
+
+      // 3) map container height
+      var map_el = document.getElementById('map');
+      var h = map_el ? map_el.getBoundingClientRect().height : 0;
+      results.push(((h >= 200) ? 'PASS' : 'FAIL') + ': map container height (' + Math.round(h) + 'px)');
+
+      // 4) navigator.geolocation present
+      var geo_api_ok = ('geolocation' in navigator);
+      results.push((geo_api_ok ? 'PASS' : 'FAIL') + ': navigator.geolocation present');
+
+      // 5) secure context
+      var secure_ok = !!window.isSecureContext;
+      results.push((secure_ok ? 'PASS' : 'FAIL') + ': secure context');
+
+      // 6) DOM elements exist
+      results.push((geo_el ? 'PASS' : 'FAIL') + ': geolocation element exists');
+      results.push((status_el ? 'PASS' : 'FAIL') + ': status element exists');
+
+      show_tests(results);
+    }
+
+    // Wire up
+    if (geo_el) {
+      geo_el.addEventListener('location', handle_geo_element_location);
+      geo_el.addEventListener('promptaction', function () { render_diag(); });
+      geo_el.addEventListener('promptdismiss', function () {
+        render_diag();
+        set_status('Permission-Dialog geschlossen. Tippe erneut auf das Element.');
+      });
+      geo_el.addEventListener('validationstatuschange', function () { render_diag(); });
+      geo_el.addEventListener('click', function () { if (!is_tracking) start_tracking(false); });
+    }
+
     if (fallback_start_btn) {
-      fallback_start_btn.addEventListener('click', (e) => {
+      fallback_start_btn.addEventListener('click', function (e) {
         e.preventDefault();
-        start_tracking({ prefer_js: true });
+        start_tracking(true);
       });
     }
 
-    // Always-visible JS start button for debugging.
-    start_js_btn.addEventListener('click', () => start_tracking({ prefer_js: true }));
+    if (start_js_btn) start_js_btn.addEventListener('click', function () { start_tracking(true); });
+    if (pause_btn) pause_btn.addEventListener('click', pause_tracking);
+    if (stop_btn) stop_btn.addEventListener('click', stop_tracking);
 
-    pause_btn.addEventListener('click', pause_tracking);
-    stop_btn.addEventListener('click', stop_tracking);
+    if (clear_btn) {
+      clear_btn.addEventListener('click', function () {
+        reset_track();
+        set_status(is_tracking ? 'Tracking aktiv (Linie geloescht)' : 'Linie geloescht');
+        set_controls_state();
+      });
+    }
 
-    clear_btn.addEventListener('click', () => {
-      reset_track();
-      set_status(is_tracking ? 'Tracking aktiv (Linie gelöscht)' : 'Linie gelöscht');
-      set_controls_state();
-    });
-
-    toggle_follow_btn.addEventListener('click', () => {
-      follow = !follow;
-      toggle_follow_btn.textContent = `Follow: ${follow ? 'an' : 'aus'}`;
-      set_status(follow ? 'Follow aktiviert' : 'Follow deaktiviert');
-    });
+    if (toggle_follow_btn) {
+      toggle_follow_btn.addEventListener('click', function () {
+        follow = !follow;
+        toggle_follow_btn.textContent = 'Follow: ' + (follow ? 'an' : 'aus');
+        set_status(follow ? 'Follow aktiviert' : 'Follow deaktiviert');
+      });
+    }
 
     // Init
-    set_controls_state();
-    await refresh_permissions_api_state();
-    render_diag();
-
-    // Periodic refresh
-    window.setInterval(async () => {
-      await refresh_permissions_api_state();
-      render_diag();
-    }, 4000);
+    try {
+      hide_error();
+      init_map();
+      refresh_permissions_api_state().then(function () {
+        render_diag();
+        set_controls_state();
+        run_tests();
+        setInterval(function () {
+          refresh_permissions_api_state().then(render_diag);
+        }, 4000);
+      });
+    } catch (e) {
+      show_error((e && e.message) ? e.message : e);
+    }
+  })();
   </script>
 </body>
 </html>
+<!-- EOF -->
